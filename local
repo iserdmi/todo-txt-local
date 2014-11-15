@@ -1,0 +1,138 @@
+#!/bin/bash
+
+action=$1
+shift
+
+[ "$action" = "usage" ] && {
+  echo "  Create todo.txt localy:"
+  echo "    local init || local i"
+  echo "      Add todo folder in pwd."
+  echo "    local destroy || local de"
+  echo "      Delete local to do folder."
+  echo "    local reset || local re"
+  echo "      Delete and create again todo.cfg local file."
+  echo "    local path || local pa"
+  echo "      Show path to local todo.txt folder."
+  echo "    local %any usual todo.sh command like (list/add \"some todo\"/...)%"
+  echo "      Show path to local todo.txt folder."
+  echo "    Note: commands will use todo.cfg in the directory of local todo.txt file, and no metter how deep are you in folders tree."
+  echo ""
+  exit
+}
+
+getRealLocalTodoDir()
+{
+	# Find "todo" folder from pwd to root directory.
+	local_todo_exists=false
+	local_dir="$(pwd)"
+	while ! $local_todo_exists
+	do	
+		local_todo_dir="$local_dir/todo"
+		[ -d "$local_todo_dir" ] && {
+			local_todo_exists=true
+		}
+		[ $local_dir == "/" ] && {
+			break
+		}
+		local_dir="$(dirname $local_dir)"
+	done
+
+	# If "todo" folder exists return path, else empty string.
+	if $local_todo_exists; then
+		die "$local_todo_dir"
+	else
+		die ""
+	fi
+}
+
+generateLocalTodoCfg()
+{
+	local_todo_cfg=$1
+	[ -f "$local_todo_cfg" ] && {
+		rm $local_todo_cfg
+	}
+	touch "$local_todo_cfg"
+	echo "export TODO_DIR=\"\$( cd \"\$( dirname \"\${BASH_SOURCE[0]}\" )\" && pwd )\"" > $local_todo_cfg
+	echo "export TODO_FILE=\"\$TODO_DIR/todo.txt\"" >> $local_todo_cfg
+	echo "export DONE_FILE=\"\$TODO_DIR/done.txt\"" >> $local_todo_cfg
+	echo "export REPORT_FILE=\"\$TODO_DIR/report.txt\"" >> $local_todo_cfg
+}
+
+dieIfNoLocalTodo()
+{
+	local_todo_dir=$1
+
+	# If "todo" folder doesn't exists throw exception.
+	[ -z "$local_todo_dir" ] && {
+		die "Local todo doesn't exists. To init local todo exec \"todo.sh local init\""
+	}
+}
+
+local_action=$1
+case $local_action in
+
+# Init comand create in pwd "todo" directory and add config file "todo.cfg".
+"init" | "i" )
+	#If local todo dir exists throw exception.
+	local_todo_dir="$(pwd)/todo"
+	[ -d "$local_todo_dir" ] && {
+		die "Local todo dir exists, to reset local todo config, exec \"todo.sh local reset\"."
+	}
+
+	#Create folder and add config in there.
+	mkdir -p $local_todo_dir
+	local_todo_cfg="$local_todo_dir/todo.cfg"
+	local_todo_txt="$local_todo_dir/todo.txt"
+	generateLocalTodoCfg "$local_todo_cfg"
+	touch "$local_todo_txt"
+	die "Local todo list created! Here it is: $local_todo_dir/todo.txt"
+	;;
+
+# Reset comand just reset config file in exists local todo
+"reset" | "re" )
+	local_todo_dir="$(getRealLocalTodoDir)"
+	dieIfNoLocalTodo $local_todo_dir
+	generateLocalTodoCfg "$local_todo_dir/todo.cfg"
+	die "Local todo config reseted!"
+	;;
+
+# Destroy local todos
+"destroy" | "de" )
+	local_todo_dir="$(getRealLocalTodoDir)"
+	dieIfNoLocalTodo $local_todo_dir
+	read -r -p "Remove this directory: \"$local_todo_dir\"? [y/N] " response
+	case $response in
+	[yY][eE][sS]|[yY] ) 
+		rm -rf "$local_todo_dir/"*
+		rmdir $local_todo_dir
+		;;
+	* )
+		die "Local todo save their lives, they thank you!"
+		;;
+	esac	
+	die "Local todo destroyed!"
+	;;
+
+# Reset comand just reset config file in exists local todo
+"path" | "pa" )
+	local_todo_dir="$(getRealLocalTodoDir)"
+	dieIfNoLocalTodo $local_todo_dir
+	die "$local_todo_dir/todo.txt"
+	;;
+
+# Other actions will send in TODO_FULL_SH with all arguments if todo dir exists and config file in there.
+* )
+	local_todo_dir="$(getRealLocalTodoDir)"
+	dieIfNoLocalTodo $local_todo_dir
+
+	# If "todo.cfg" in todo dir doesn't exists throw exception.
+	local_todo_cfg="$local_todo_dir/todo.cfg"
+	! [ -f "$local_todo_cfg" ] && {
+		die "Local todo dir exists, but \"todo.cfg\" missing. To reset local todo config, exec \"todo.sh local reset\"."
+	}
+
+	# Run todo.sh with local config and all args.
+	"$TODO_FULL_SH" -d "$local_todo_cfg" $*
+
+	;;
+esac
